@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 namespace OpenAI
 {
-    public class TextCompletionChat : MonoBehaviour
+    public class ChatGPT : MonoBehaviour
     {
         [SerializeField] private InputField inputField;
         [SerializeField] private Button button;
@@ -16,20 +16,20 @@ namespace OpenAI
         private float height;
         private OpenAIApi openai = new OpenAIApi();
 
-        private string userInput;
-        private string prompt = "Act as a random stranger in a chat room and reply to the questions.\nQ: ";
-        
+        private List<ChatMessage> messages = new List<ChatMessage>();
+        private string prompt = "Act as a random stranger in a chat room and reply to the questions. Don't break character. Don't ever mention that you are an AI model.";
+
         private void Start()
         {
             button.onClick.AddListener(SendReply);
         }
-        
-        private void AppendMessage(string message, bool isUser = true)
+
+        private void AppendMessage(ChatMessage message)
         {
             scroll.content.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, 0);
 
-            var item = Instantiate(isUser ? sent : received, scroll.content);
-            item.GetChild(0).GetChild(0).GetComponent<Text>().text = message;
+            var item = Instantiate(message.Role == "user" ? sent : received, scroll.content);
+            item.GetChild(0).GetChild(0).GetComponent<Text>().text = message.Content;
             item.anchoredPosition = new Vector2(0, -height);
             LayoutRebuilder.ForceRebuildLayoutImmediate(item);
             height += item.sizeDelta.y;
@@ -39,26 +39,36 @@ namespace OpenAI
 
         private async void SendReply()
         {
-            userInput = inputField.text;
-            prompt += $"{userInput}\nA: ";
-            AppendMessage(userInput);
+            var newMessage = new ChatMessage()
+            {
+                Role = "user",
+                Content = inputField.text
+            };
+            
+            AppendMessage(newMessage);
+
+            if (messages.Count == 0) newMessage.Content = prompt + "\n" + inputField.text; 
+            
+            messages.Add(newMessage);
             
             button.enabled = false;
             inputField.text = "";
             inputField.enabled = false;
             
             // Complete the instruction
-            var completionResponse = await openai.CreateCompletion(new CreateCompletionRequest()
+            var completionResponse = await openai.CreateChatCompletion(new CreateChatCompletionRequest()
             {
-                Prompt = prompt,
-                Model = "text-davinci-003",
-                MaxTokens = 128
+                Model = "gpt-3.5-turbo-0613",
+                Messages = messages
             });
 
             if (completionResponse.Choices != null && completionResponse.Choices.Count > 0)
             {
-                AppendMessage(completionResponse.Choices[0].Text, false);
-                prompt += $"{completionResponse.Choices[0].Text}\nQ: ";
+                var message = completionResponse.Choices[0].Message;
+                message.Content = message.Content.Trim();
+                
+                messages.Add(message);
+                AppendMessage(message);
             }
             else
             {
